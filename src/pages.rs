@@ -70,7 +70,8 @@ fn app_icon(name: Option<&str>) -> widget::icon::Handle {
     match name {
         Some(path) if path.starts_with('/') => widget::icon::from_path(path.into()),
         Some(name) if !name.is_empty() => widget::icon::from_name(name.to_owned()).handle(),
-        _ => icon("application-x-executable-symbolic"),
+        // A speaker rather than a program's icon: it's about the sound.
+        _ => icon("audio-speakers-symbolic"),
     }
 }
 

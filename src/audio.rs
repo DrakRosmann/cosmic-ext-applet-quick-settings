@@ -15,6 +15,17 @@ use crate::{
     services::{Volume, pactl},
 };
 
+/// The icon of an app that doesn't name one, as Firefox: by its program
+/// ("firefox-bin" is firefox) or its name, if the icon theme has it.
+fn guess_icon(app: &str, binary: Option<&str>) -> Option<String> {
+    let binary = binary.map(|b| b.trim_end_matches("-bin").to_lowercase());
+    let name = app.to_lowercase().replace(' ', "-");
+    binary
+        .into_iter()
+        .chain(std::iter::once(name))
+        .find(|candidate| cosmic::widget::icon::from_name(candidate.as_str()).path().is_some())
+}
+
 /// An app playing sound, all its streams together.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stream {
@@ -96,6 +107,12 @@ pub async fn mixer() -> Mixer {
         else {
             continue;
         };
+        // Speech Dispatcher keeps a silent stream open: not an app.
+        if app.starts_with("speech-dispatcher")
+            || property(&input, "application.process.binary") == Some("sd_dummy")
+        {
+            continue;
+        }
         let muted = input["mute"].as_bool().unwrap_or(false);
         let level = level(&input["volume"]);
         // Tabs of one browser, say: one app.
@@ -108,7 +125,9 @@ pub async fn mixer() -> Mixer {
         streams.push(Stream {
             indices: vec![index as u32],
             app: app.to_owned(),
-            icon: property(&input, "application.icon_name").map(str::to_owned),
+            icon: property(&input, "application.icon_name")
+                .map(str::to_owned)
+                .or_else(|| guess_icon(app, property(&input, "application.process.binary"))),
             level,
             muted,
         });
