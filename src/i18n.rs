@@ -51,6 +51,8 @@ pub struct Strings {
     pub show_percentage: &'static str,
     pub show_active: &'static str,
     pub bar_spacing: &'static str,
+    pub panel_icons: &'static str,
+    pub icon_size: &'static str,
     pub hot_edge: &'static str,
     pub spacing_small: &'static str,
     pub spacing_medium: &'static str,
@@ -113,6 +115,11 @@ pub struct Strings {
     pub volume: &'static str,
     pub sound: &'static str,
     pub muted: &'static str,
+    pub dns: &'static str,
+    pub dns_automatic: &'static str,
+    pub dns_custom: &'static str,
+    pub dns_about: &'static str,
+    pub more_network: &'static str,
 }
 
 pub fn strings() -> &'static Strings {
@@ -167,6 +174,8 @@ pub fn strings() -> &'static Strings {
         show_percentage: "Mostrar porcentagem na barra",
         show_active: "Mostrar na barra os blocos ativos",
         bar_spacing: "Espaço entre os ícones da barra",
+        panel_icons: "Ícones na barra",
+        icon_size: "Tamanho dos ícones da barra",
         hot_edge: "Borda ativa",
         spacing_small: "Pequeno",
         spacing_medium: "Médio",
@@ -229,6 +238,11 @@ pub fn strings() -> &'static Strings {
         volume: "Volume",
         sound: "Som",
         muted: "Mudo",
+        dns: "DNS",
+        dns_automatic: "Automático",
+        dns_custom: "Personalizado",
+        dns_about: "Os servidores que traduzem nomes de sites, na conexão em uso",
+        more_network: "Mais configurações de rede",
     };
     static EN: Strings = Strings {
         screenshot: "Screenshot",
@@ -281,6 +295,8 @@ pub fn strings() -> &'static Strings {
         show_percentage: "Show percentage on the panel",
         show_active: "Show active tiles on the panel",
         bar_spacing: "Space between the panel icons",
+        panel_icons: "Icons on the panel",
+        icon_size: "Size of the panel icons",
         hot_edge: "Hot Edge",
         spacing_small: "Small",
         spacing_medium: "Medium",
@@ -343,6 +359,11 @@ pub fn strings() -> &'static Strings {
         volume: "Volume",
         sound: "Sound",
         muted: "Muted",
+        dns: "DNS",
+        dns_automatic: "Automatic",
+        dns_custom: "Custom",
+        dns_about: "The servers that look up site names, for the connection in use",
+        more_network: "More network settings",
     };
     static FR: Strings = Strings {
         screenshot: "Capture d’écran",
@@ -395,6 +416,8 @@ pub fn strings() -> &'static Strings {
         show_percentage: "Afficher le pourcentage dans le panneau",
         show_active: "Afficher les tuiles actives dans le panneau",
         bar_spacing: "Espace entre les icônes du panneau",
+        panel_icons: "Icônes du panneau",
+        icon_size: "Taille des icônes du panneau",
         hot_edge: "Bord actif",
         spacing_small: "Petit",
         spacing_medium: "Moyen",
@@ -457,6 +480,11 @@ pub fn strings() -> &'static Strings {
         volume: "Volume",
         sound: "Son",
         muted: "Muet",
+        dns: "DNS",
+        dns_automatic: "Automatique",
+        dns_custom: "Personnalisé",
+        dns_about: "Les serveurs qui résolvent les noms des sites, pour la connexion utilisée",
+        more_network: "Plus de paramètres réseau",
     };
     let lang = ["LC_ALL", "LC_MESSAGES", "LANG"]
         .iter()

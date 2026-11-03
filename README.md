@@ -23,17 +23,21 @@ Passar o mouse sobre cada ícone mostra o que ele diz: a rede, o volume, a bater
 tempo restante, cada bloco ligado. Clicar abre:
 
 - bateria em %, com o tempo que falta quando o sistema sabe (clicar abre a página de
-  Energia), e botões redondos de editar, captura de tela, Configurações, bloquear e
-  desligar (que abre Bloquear, Suspender, Reiniciar, Desligar e Sair, em blocos grandes);
+  Energia; num espaço curto, o tempo se abrevia em vez de empurrar os botões), e botões
+  redondos de editar, Configurações e desligar (que abre Bloquear, Suspender, Reiniciar,
+  Desligar e Sair, em blocos grandes); a captura de tela é um bloco que dá para adicionar;
 - quem está usando a câmera ou o microfone, quando alguém está;
 - sliders grossos de volume e de brilho, como no Android e no iOS: o ícone fica dentro,
   arrasta-se em qualquer ponto, a roda do mouse também muda; o ícone do volume liga e
-  desliga o mudo (o slider fica cinza), e a seta ao lado abre a página;
+  desliga o mudo (o slider fica cinza), e a seta ao lado abre a página; as pontas dos
+  sliders e os botões redondos seguem o arredondamento escolhido no tema do COSMIC;
 - blocos de Wi-Fi, Bluetooth (com a bateria do dispositivo conectado), Energia (alterna
   Economia/Equilibrado/Desempenho), Não perturbe, Tema escuro e Modo avião; dá para
   adicionar VPN (liga a última usada, ou desliga as que estão ligadas), Microfone mudo, Manter acordado, Lado a lado (tiling), Lupa, Inverter cores,
   Leitor de tela, Alto contraste, Captura de tela, Espaços de trabalho, Touchpad (liga e
-  desliga o touchpad, sem mexer no resto da configuração dele) e Borda ativa (liga e desliga
+  desliga o touchpad, sem mexer no resto da configuração dele), DNS (passa pelos servidores
+  da rede, Cloudflare, Google, Quad9, AdGuard e os que você tinha posto à mão, na conexão em
+  uso; a seta abre a lista) e Borda ativa (liga e desliga
   a [borda ativa](https://github.com/DrakRosmann/cosmic-ext-hot-edge); só aparece com ela
   instalada, e a seta abre o app dela). Os blocos acendem e apagam
   aos poucos e cedem um pouco ao serem apertados, como no Android; a seta redonda dentro
@@ -84,7 +88,8 @@ o Configurações no rodapé:
 As páginas entram deslizando (da direita ao entrar, da esquerda ao voltar), com fade. A
 altura muda de uma vez: redimensionar o popup a cada quadro derrubava o renderizador. O
 popup fica sob o applet, rente à ponta dele (num canto da tela, quase encostado na
-borda), e vai até quase a altura da tela; os controles ficam fixos e só as notificações rolam.
+borda), e vai até quase a altura da tela; o que passar disso rola, as notificações embaixo
+dos controles.
 
 O lápis no topo abre a edição, como no Android: os blocos aparecem com "−" para tirar;
 arraste um bloco para outra posição (os outros abrem espaço enquanto ele passa); tocar
@@ -92,7 +97,9 @@ num bloco o seleciona para mover (Antes/Depois) ou mudar o tamanho (grande, com 
 pequeno, só o ícone, metade da largura); embaixo, os blocos que faltam, com "+".
 Em **Espaço entre os ícones da barra**, ainda na edição, os ícones no painel ficam mais
 juntos ou mais afastados, para telas grandes: Pequeno (como antes), Médio ou Grande. O
-popup não muda.
+popup não muda. Em **Ícones na barra** dá para esconder as notificações, a rede, o volume,
+a bateria do computador e cada periférico (um mouse que sempre diz 100%, por exemplo), e
+em **Tamanho dos ícones da barra**, deixá-los menores ou maiores.
 O botão de desfazer no topo restaura o padrão. A escolha fica salva na configuração do COSMIC.
 
 ## Instalar
@@ -142,7 +149,7 @@ se ficar repetido.
 
 | Controle | Fonte |
 | --- | --- |
-| Wi-Fi, rede em uso, VPN | NetworkManager |
+| Wi-Fi, rede em uso, VPN, DNS | NetworkManager |
 | Bluetooth | BlueZ (primeiro adaptador) |
 | Bateria, periféricos | UPower; no Bluetooth, também a bateria que o BlueZ informa |
 | Energia | power-profiles-daemon (ou o tuned-ppd do Fedora) |

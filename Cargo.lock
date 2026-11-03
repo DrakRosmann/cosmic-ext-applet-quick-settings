@@ -950,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-ext-applet-quick-settings"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "cosmic-settings-a11y-manager-subscription",

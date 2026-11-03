@@ -18,6 +18,7 @@ use crate::{
     audio::{self, Mixer, Privacy},
     bar_spacing::BarSpacing,
     i18n::strings,
+    panel_icons::{Hidden, IconSize, PanelIcon},
     workspaces,
     media::{self, Control, Media},
     notifications::{self, Notification},
@@ -50,6 +51,7 @@ pub enum Page {
     Tiling,
     DoNotDisturb,
     Session,
+    Dns,
 }
 
 impl Page {
@@ -66,6 +68,7 @@ impl Page {
             "tiling" => Page::Tiling,
             "dnd" => Page::DoNotDisturb,
             "session" => Page::Session,
+            "dns" => Page::Dns,
             _ => return None,
         })
     }
@@ -126,6 +129,9 @@ pub enum Message {
     ToggleVpn,
     /// A VPN, by index, on or off.
     ConnectVpn(usize),
+    /// The DNS servers: the next choice, or this one.
+    NextDns,
+    SetDns(crate::dns::Choice),
     Sinks(Option<(Vec<Sink>, String)>),
     SetSink(String),
     Displays(Vec<Display>),
@@ -192,6 +198,9 @@ pub enum Message {
     ResetTiles,
     /// How far apart the icons on the panel are.
     SetBarSpacing(BarSpacing),
+    /// An icon on the panel shown or hidden.
+    TogglePanelIcon(PanelIcon),
+    SetIconSize(IconSize),
     /// A page of COSMIC Settings, or all of it.
     Settings(Option<&'static str>),
     Screenshot,
@@ -261,6 +270,10 @@ pub struct App {
     pub(crate) touchpad: Option<services::Touchpad>,
     pub(crate) hot_edge: bool,
     pub(crate) bar_spacing: BarSpacing,
+    pub(crate) hidden_icons: Hidden,
+    /// The DNS servers last set by hand, to go back to.
+    pub(crate) custom_dns: Vec<String>,
+    pub(crate) icon_size: IconSize,
     /// The height of the screen the panel is on, in logical pixels.
     screen_height: Option<i32>,
     /// The panel button's size, all its icons.
@@ -370,6 +383,12 @@ impl App {
     fn load(&self, page: Page) -> app::Task<Message> {
         match page {
             Page::Wifi => Task::batch([
+                Task::future(async {
+                    match services::network_now().await {
+                        Some(network) => cosmic::action::app(Message::Update(Update::Network(network))),
+                        None => cosmic::action::app(Message::None),
+                    }
+                }),
                 load_wifi(false, Duration::ZERO),
                 // A scan takes a few seconds.
                 load_wifi(true, Duration::from_secs(3)),
@@ -524,6 +543,9 @@ impl cosmic::Application for App {
             touchpad: services::touchpad(),
             hot_edge: services::hot_edge(),
             bar_spacing: BarSpacing::load(),
+            hidden_icons: Hidden::load(),
+            custom_dns: crate::dns::saved_custom(),
+            icon_size: IconSize::load(),
             ..Self::default()
         };
         // COSMIC_QS_PREVIEW=sound opens the popup on that page by itself, to
@@ -600,6 +622,15 @@ impl cosmic::Application for App {
             }
             Message::Update(update) => match update {
                 Update::Network(network) => {
+                    // Servers set by hand, kept before going to another choice.
+                    if let Some(crate::dns::Choice::Custom(servers)) =
+                        network.dns.as_ref().map(|d| &d.choice)
+                    {
+                        if *servers != self.custom_dns {
+                            self.custom_dns = servers.clone();
+                            crate::dns::save_custom(servers);
+                        }
+                    }
                     let changed = network != self.network;
                     self.network = network;
                     if changed && self.page == Some(Page::Wifi) {
@@ -729,6 +760,28 @@ impl cosmic::Application for App {
             Message::ConnectVpn(index) => {
                 if let Some(vpn) = self.network.vpns.get(index) {
                     return connect_vpn(vpn.clone());
+                }
+            }
+            Message::NextDns => {
+                if let Some(dns) = &self.network.dns {
+                    let next = crate::dns::next(&dns.choice, &self.custom_dns);
+                    return self.update(Message::SetDns(next));
+                }
+            }
+            Message::SetDns(choice) => {
+                if let Some(dns) = self.network.dns.as_mut() {
+                    let target = dns.clone();
+                    // Shown at once; NetworkManager confirms it a moment later.
+                    dns.choice = choice.clone();
+                    return Task::future(async move {
+                        if let Err(err) = crate::dns::set(target, choice).await {
+                            tracing::warn!("cannot change the DNS servers: {err}");
+                        }
+                        match services::network_now().await {
+                            Some(network) => cosmic::action::app(Message::Update(Update::Network(network))),
+                            None => cosmic::action::app(Message::None),
+                        }
+                    });
                 }
             }
             Message::NextPowerProfile => {
@@ -1186,6 +1239,14 @@ impl cosmic::Application for App {
                 self.bar_spacing = spacing;
                 spacing.save();
             }
+            Message::TogglePanelIcon(icon) => {
+                self.hidden_icons.toggle(&icon);
+                self.hidden_icons.save();
+            }
+            Message::SetIconSize(size) => {
+                self.icon_size = size;
+                size.save();
+            }
             Message::Settings(page) => {
                 spawn("cosmic-settings", page.as_slice());
                 return self.close_popup();
@@ -1344,7 +1405,7 @@ impl cosmic::Application for App {
     fn view(&self) -> Element<'_, Message> {
         let t = strings();
         let applet = &self.core.applet;
-        let size = applet.suggested_size(true).0;
+        let size = self.icon_size.apply(applet.suggested_size(true).0);
         let (major, minor) = applet.suggested_padding(true);
         let colored = |name: &str, color: Option<fn(&cosmic::Theme) -> iced::Color>| -> Element<'_, Message> {
             widget::icon::icon(icon(name))
@@ -1408,7 +1469,7 @@ impl cosmic::Application for App {
             ));
         }
         // Notifications: a bell, lit with how many are new.
-        if !self.notifications.is_empty() {
+        if !self.notifications.is_empty() && self.hidden_icons.shows(&PanelIcon::Notifications) {
             let new = self.new_count();
             if new == 0 {
                 icons.push(tip(
@@ -1437,8 +1498,10 @@ impl cosmic::Application for App {
             None if self.airplane_mode() => t.airplane_mode.to_owned(),
             None => t.disconnected.to_owned(),
         };
-        icons.push(tip(panel_icon(self.network_icon()), network));
-        if let Some(volume) = &self.volume {
+        if self.hidden_icons.shows(&PanelIcon::Network) {
+            icons.push(tip(panel_icon(self.network_icon()), network));
+        }
+        if let Some(volume) = self.volume.as_ref().filter(|_| self.hidden_icons.shows(&PanelIcon::Volume)) {
             let text = if volume.muted {
                 format!("{}: {}", t.volume, t.muted)
             } else {
@@ -1453,7 +1516,11 @@ impl cosmic::Application for App {
             icons.push(tip(area.into(), text));
         }
         // Each mouse, keyboard, headset… with its charge.
-        for peripheral in &self.peripherals {
+        for peripheral in self
+            .peripherals
+            .iter()
+            .filter(|p| self.hidden_icons.shows(&PanelIcon::Peripheral(p.name.clone())))
+        {
             icons.push(tip(
                 with_text(
                     panel_icon(&peripheral.icon),
@@ -1465,7 +1532,7 @@ impl cosmic::Application for App {
         }
         // The computer's battery last, by the screen's edge; scrolling on it
         // sets the screen's brightness.
-        if let Some(battery) = &self.battery {
+        if let Some(battery) = self.battery.as_ref().filter(|_| self.hidden_icons.shows(&PanelIcon::Battery)) {
             let icon = panel_icon(&symbolic(&battery.icon));
             let content = if self.show_percentage {
                 with_text(icon, format!("{:.0}%", battery.percentage), false)
@@ -1487,6 +1554,10 @@ impl cosmic::Application for App {
                 .on_press(Message::TogglePopup)
                 .on_scroll(|delta| Message::ScrollBrightness(scroll_steps(delta)));
             icons.push(tip(area.into(), text));
+        }
+        // Everything hidden: still something to click.
+        if icons.is_empty() {
+            icons.push(tip(panel_icon("emblem-system-symbolic"), t.settings.to_owned()));
         }
         let icons: Element<'_, Message> = if horizontal {
             widget::row::with_children(icons)
@@ -1523,6 +1594,7 @@ impl cosmic::Application for App {
             Page::Tiling => pages::panel(self.tiling_page()),
             Page::DoNotDisturb => pages::panel(self.dnd_page()),
             Page::Session => pages::panel(self.session_page()),
+            Page::Dns => pages::panel(self.dns_page()),
         };
         let depth = if page == Page::Main { 0 } else { 1 };
         // The pages draw their own panels, apart, instead of the applet's

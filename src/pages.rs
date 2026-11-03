@@ -16,6 +16,7 @@ use crate::{
     widgets::{Level, inherit_colors},
     app::{App, Dnd, Message, Page},
     bar_spacing::BarSpacing,
+    panel_icons::{IconSize, PanelIcon},
     media::Control,
     notifications::Notification,
     i18n::strings,
@@ -275,7 +276,8 @@ fn circle_button<'a>(icon_name: &str, message: Message, size: f32) -> widget::Bu
             background: Some(Background::Color(
                 if hovered { component.hover } else { component.base }.into(),
             )),
-            border_radius: (size / 2.0).into(),
+            // Round, or as square as the theme's buttons.
+            border_radius: theme.cosmic().radius_xl()[0].min(size / 2.0).into(),
             text_color: Some(component.on.into()),
             icon_color: Some(component.on.into()),
             ..button::Style::new()
@@ -454,6 +456,39 @@ impl App {
             body,
             Some((t.more_vpn, "vpn")),
         )
+    }
+
+    pub fn dns_page(&self) -> Element<'_, Message> {
+        let t = strings();
+        let mut body = Vec::new();
+        match &self.network.dns {
+            None => body.push(note(t.not_connected)),
+            Some(dns) => {
+                body.push(note(t.dns_about));
+                let mut choices = crate::dns::choices(&self.custom_dns);
+                if !choices.contains(&dns.choice) {
+                    choices.push(dns.choice.clone());
+                }
+                for choice in choices {
+                    let servers = match &choice {
+                        crate::dns::Choice::Automatic => None,
+                        crate::dns::Choice::Provider(p) => Some(p.ipv4.join(", ")),
+                        crate::dns::Choice::Custom(servers) => Some(servers.join(", ")),
+                    };
+                    let title = match &choice {
+                        crate::dns::Choice::Custom(_) => t.dns_custom.to_owned(),
+                        other => other.name(),
+                    };
+                    let chosen = choice == dns.choice;
+                    body.push(
+                        item("network-server-symbolic", title, servers, chosen.then(check))
+                            .on_press(Message::SetDns(choice))
+                            .into(),
+                    );
+                }
+            }
+        }
+        self.page(t.dns, None, body, Some((t.more_network, "network")))
     }
 
     pub fn bluetooth_page(&self) -> Element<'_, Message> {
@@ -1087,34 +1122,79 @@ impl App {
             .align_y(Alignment::Center),
         );
 
-        // Further apart on a big screen.
-        let choices = BarSpacing::ALL.map(|choice| -> Element<'_, Message> {
-            let chosen = self.bar_spacing == choice;
-            button::custom(
-                widget::row::with_capacity(2)
-                    .push_maybe(chosen.then(|| {
-                        widget::icon::icon(icon("object-select-symbolic")).size(16)
-                    }))
-                    .push(widget::text::body(choice.name()))
-                    .spacing(spacing.space_xxs)
-                    .align_y(Alignment::Center),
-            )
-            .padding([8, 12])
-            .width(Length::Fill)
-            .class(chip_class(chosen))
-            .on_press(Message::SetBarSpacing(choice))
-            .into()
-        });
-        column = column.push(
+        // Which icons the panel shows: each wireless device too, by name.
+        let mut shown = vec![
+            PanelIcon::Notifications,
+            PanelIcon::Network,
+            PanelIcon::Volume,
+        ];
+        let mut devices: Vec<String> = self.peripherals.iter().map(|p| p.name.clone()).collect();
+        devices.dedup();
+        shown.extend(devices.into_iter().map(PanelIcon::Peripheral));
+        if self.battery.is_some() {
+            shown.push(PanelIcon::Battery);
+        }
+        let mut toggles = widget::column::with_capacity(shown.len() + 1)
+            .spacing(spacing.space_xxs)
+            .push(widget::text::body(t.panel_icons));
+        for panel_icon in shown {
+            let on = self.hidden_icons.shows(&panel_icon);
+            toggles = toggles.push(
+                widget::row::with_children(vec![
+                    widget::text::body(panel_icon.name()).width(Length::Fill).into(),
+                    widget::toggler(on)
+                        .on_toggle(move |_| Message::TogglePanelIcon(panel_icon.clone()))
+                        .into(),
+                ])
+                .align_y(Alignment::Center),
+            );
+        }
+        column = column.push(toggles.padding([0, spacing.space_xxs]));
+
+        // Choices side by side, the one picked with a check.
+        let chips = |label: &'static str, choices: Vec<(&'static str, bool, Message)>| {
+            let choices = choices.into_iter().map(|(name, chosen, message)| -> Element<'_, Message> {
+                button::custom(
+                    widget::row::with_capacity(2)
+                        .push_maybe(chosen.then(|| {
+                            widget::icon::icon(icon("object-select-symbolic")).size(16)
+                        }))
+                        .push(widget::text::body(name))
+                        .spacing(spacing.space_xxs)
+                        .align_y(Alignment::Center),
+                )
+                .padding([8, 12])
+                .width(Length::Fill)
+                .class(chip_class(chosen))
+                .on_press(message)
+                .into()
+            });
             widget::column::with_children(vec![
-                widget::text::body(t.bar_spacing).into(),
-                widget::row::with_children(choices)
+                widget::text::body(label).into(),
+                widget::row::with_children(choices.collect::<Vec<_>>())
                     .spacing(spacing.space_xxs)
                     .into(),
             ])
             .spacing(spacing.space_xs)
-            .padding([0, spacing.space_xxs]),
-        );
+            .padding([0, spacing.space_xxs])
+        };
+        column = column.push(chips(
+            t.icon_size,
+            IconSize::ALL
+                .into_iter()
+                .map(|size| (size.name(), self.icon_size == size, Message::SetIconSize(size)))
+                .collect(),
+        ));
+        // Further apart on a big screen.
+        column = column.push(chips(
+            t.bar_spacing,
+            BarSpacing::ALL
+                .into_iter()
+                .map(|choice| {
+                    (choice.name(), self.bar_spacing == choice, Message::SetBarSpacing(choice))
+                })
+                .collect(),
+        ));
         column = column.push(
             widget::row::with_children(vec![
                 widget::space::horizontal().into(),
@@ -1150,10 +1230,17 @@ impl App {
                 .spacing(spacing.space_s)
                 .padding(spacing.space_s),
         );
-        // As tall as the popup's limits let it be, from the screen's height.
-        widget::column::with_children(vec![controls, panel(self.notifications_panel())])
-            .spacing(PANEL_GAP)
-            .into()
+        // As tall as the popup's limits let it be, from the screen's height;
+        // past that it all scrolls, notifications under the controls. The
+        // notifications scrolling on their own got what the controls left,
+        // which with many tiles, a player and a roomy interface density was
+        // a sliver.
+        widget::scrollable(
+            widget::column::with_children(vec![controls, panel(self.notifications_panel())])
+                .spacing(PANEL_GAP),
+        )
+        .height(Length::Shrink)
+        .into()
     }
 
     /// Who is using the camera or the microphone.
@@ -1463,8 +1550,7 @@ impl App {
                 cards.push(self.notification_card(group[0], more));
             }
         }
-        let list = widget::scrollable(widget::column::with_children(cards).spacing(spacing.space_xs))
-            .height(Length::Shrink);
+        let list = widget::column::with_children(cards).spacing(spacing.space_xs);
         widget::column::with_children(vec![header.into(), list.into()])
             .spacing(spacing.space_xs)
             .padding(spacing.space_s)
@@ -1594,30 +1680,39 @@ impl App {
 
     fn header(&self) -> Element<'_, Message> {
         let t = strings();
-        let mut row = widget::row::with_capacity(6)
+        let mut row = widget::row::with_capacity(2)
             .spacing(theme::spacing().space_xs)
             .align_y(Alignment::Center);
-        if let Some(battery) = &self.battery {
-            // A way to the batteries and power modes, with how long it lasts.
-            let mut label = format!("{:.0} %", battery.percentage);
-            if let Some(left) = battery.time_left {
-                label.push_str(&format!(" · {}", crate::app::duration(left)));
-            }
-            row = row.push(
+        // The battery takes what the buttons leave, its time cut short if it
+        // must: never the buttons pushed out of the popup, as a long time
+        // left or a roomier interface density did.
+        let battery: Element<'_, Message> = match &self.battery {
+            Some(battery) => {
+                // A way to the batteries and power modes, with how long it lasts.
+                let mut label = format!("{:.0} %", battery.percentage);
+                if let Some(left) = battery.time_left {
+                    label.push_str(&format!(" · {}", crate::app::duration(left)));
+                }
                 button::custom(
                     widget::row::with_children(vec![
                         widget::icon::icon(icon(&symbolic(&battery.icon))).size(16).into(),
-                        widget::text::body(label).into(),
+                        widget::text::body(label)
+                            .ellipsize(iced::core::text::Ellipsize::End(
+                                iced::core::text::EllipsizeHeightLimit::Lines(1),
+                            ))
+                            .into(),
                     ])
                     .spacing(theme::spacing().space_xxs)
                     .align_y(Alignment::Center),
                 )
                 .padding([10, 14])
                 .class(pill_class())
-                .on_press(Message::ShowPage(Page::Power)),
-            );
-        }
-        row = row.push(widget::space::horizontal());
+                .on_press(Message::ShowPage(Page::Power))
+                .into()
+            }
+            None => widget::space::horizontal().into(),
+        };
+        row = row.push(widget::container(battery).width(Length::Fill));
         let action = |icon_name: &'static str, tooltip: &'static str, message| {
             widget::tooltip(
                 circle_button(icon_name, message, 36.0),
@@ -1625,13 +1720,12 @@ impl App {
                 widget::tooltip::Position::Bottom,
             )
         };
-        // Close together, to leave the battery room for a long time left.
-        let actions = widget::row::with_capacity(5)
+        // Lock is under the power button, with Suspend and the rest, and
+        // Screenshot is a tile one can add: few buttons, room for the battery.
+        let actions = widget::row::with_capacity(3)
             .spacing(theme::spacing().space_xxs)
             .push(action("document-edit-symbolic", t.edit, Message::ShowPage(Page::Edit)))
-            .push(action("accessories-screenshot-symbolic", t.screenshot, Message::Screenshot))
             .push(action("emblem-system-symbolic", t.settings, Message::Settings(None)))
-            .push(action("system-lock-screen-symbolic", t.lock, Message::Lock))
             .push(action("system-shutdown-symbolic", t.session, Message::ShowPage(Page::Session)));
         row.push(actions).into()
     }
@@ -1914,6 +2008,24 @@ impl App {
                     self.hot_edge,
                     Some(Message::ToggleHotEdge),
                     Some(Message::OpenHotEdge),
+                )
+            }
+            Tile::Dns => {
+                let (subtitle, on, toggle) = match &self.network.dns {
+                    Some(dns) => (
+                        dns.choice.name(),
+                        dns.choice != crate::dns::Choice::Automatic,
+                        Some(Message::NextDns),
+                    ),
+                    None => (t.not_connected.to_owned(), false, None),
+                };
+                TileState::new(
+                    tile.icon(),
+                    t.dns,
+                    Some(subtitle),
+                    on,
+                    toggle,
+                    Some(Message::ShowPage(Page::Dns)),
                 )
             }
             Tile::Touchpad => {

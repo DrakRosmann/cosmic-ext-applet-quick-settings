@@ -35,10 +35,11 @@ pub enum Tile {
     Workspaces,
     Touchpad,
     HotEdge,
+    Dns,
 }
 
 impl Tile {
-    pub const ALL: [Tile; 18] = [
+    pub const ALL: [Tile; 19] = [
         Tile::Wifi,
         Tile::Vpn,
         Tile::Bluetooth,
@@ -57,6 +58,7 @@ impl Tile {
         Tile::Workspaces,
         Tile::Touchpad,
         Tile::HotEdge,
+        Tile::Dns,
     ];
 
     pub const DEFAULT: [Tile; 6] = [
@@ -89,6 +91,7 @@ impl Tile {
             Tile::Workspaces => "workspaces",
             Tile::Touchpad => "touchpad",
             Tile::HotEdge => "hot-edge",
+            Tile::Dns => "dns",
         }
     }
 
@@ -126,6 +129,7 @@ impl Tile {
             Tile::Workspaces => t.workspaces,
             Tile::Touchpad => t.touchpad,
             Tile::HotEdge => t.hot_edge,
+            Tile::Dns => t.dns,
         }
     }
 
@@ -149,6 +153,7 @@ impl Tile {
             Tile::Workspaces => "view-app-grid-symbolic",
             Tile::Touchpad => "input-touchpad-symbolic",
             Tile::HotEdge => "input-mouse-symbolic",
+            Tile::Dns => "network-server-symbolic",
         }
     }
 }

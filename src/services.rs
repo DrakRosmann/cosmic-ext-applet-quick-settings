@@ -29,6 +29,8 @@ pub struct Network {
     pub connection: Option<(String, String)>,
     /// The VPNs set up, WireGuard's too, the last used first.
     pub vpns: Vec<Vpn>,
+    /// The DNS servers of the Wi-Fi or cable in use.
+    pub dns: Option<crate::dns::Dns>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -187,8 +189,11 @@ fn watch(service: Service) -> Subscription<Update> {
                 if output.send(service.read(&conn).await).await.is_err() {
                     return;
                 }
-                if changes.next().await.is_none() {
-                    return futures::future::pending().await;
+                // Read again now and then even if nothing is said: a change
+                // missed, or a read that failed, isn't kept for long.
+                match tokio::time::timeout(Duration::from_secs(30), changes.next()).await {
+                    Ok(None) => return futures::future::pending().await,
+                    Ok(Some(_)) | Err(_) => {}
                 }
                 // Changes come in bursts.
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -274,26 +279,104 @@ trait ActiveConnection {
     fn kind(&self) -> zbus::Result<String>;
     #[zbus(property)]
     fn connection(&self) -> zbus::Result<OwnedObjectPath>;
+    /// 2 once activated.
+    #[zbus(property)]
+    fn state(&self) -> zbus::Result<u32>;
+    #[zbus(property)]
+    fn devices(&self) -> zbus::Result<Vec<OwnedObjectPath>>;
 }
 
 async fn network(conn: &zbus::Connection) -> zbus::Result<Network> {
-    let nm = NetworkManagerProxy::new(conn).await?;
-    let wifi_enabled = nm.wireless_enabled().await?;
-    let primary = nm.primary_connection().await?;
-    let connection = if primary.as_str() == "/" {
-        None
-    } else {
-        let active = ActiveConnectionProxy::builder(conn)
-            .path(primary)?
-            .build()
-            .await?;
-        Some((active.id().await?, active.kind().await?))
+    // Each part on its own: one failing, say the primary connection gone
+    // between asking for it and reading it while NetworkManager switches,
+    // used to leave everything at its default, Wi-Fi off, until the next
+    // change, which on a quiet network may not come for long.
+    let nm = NetworkManagerProxy::builder(conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
+    let active = active_connections(conn, &nm).await;
+    let connection = active.first().map(|a| (a.name.clone(), a.kind.clone()));
+    // Connected through Wi-Fi, it is on, whatever else says.
+    let on_wifi = active.iter().any(|a| a.kind == "802-11-wireless");
+    let wifi_enabled = match nm.wireless_enabled().await {
+        Ok(enabled) => enabled || on_wifi,
+        Err(err) => {
+            tracing::warn!("cannot read whether Wi-Fi is on: {err}");
+            on_wifi || wifi_device(conn).await.ok().flatten().is_some()
+        }
+    };
+    // The servers of the Wi-Fi or cable in use, not of a VPN on top.
+    let dns = match active.iter().find(|a| a.physical()) {
+        Some(a) => crate::dns::current(conn, a.path.clone(), a.settings.clone()).await.ok(),
+        None => None,
     };
     Ok(Network {
         wifi_enabled,
         connection,
         vpns: vpns(conn, &nm).await.unwrap_or_default(),
+        dns,
     })
+}
+
+/// The network's state now, for a page opening: what it shows must not wait
+/// for NetworkManager to say something changed.
+pub async fn network_now() -> Option<Network> {
+    let conn = zbus::Connection::system().await.ok()?;
+    network(&conn).await.ok()
+}
+
+struct ActiveInfo {
+    path: OwnedObjectPath,
+    settings: OwnedObjectPath,
+    name: String,
+    kind: String,
+}
+
+impl ActiveInfo {
+    fn physical(&self) -> bool {
+        matches!(self.kind.as_str(), "802-11-wireless" | "802-3-ethernet")
+    }
+}
+
+/// The connections up: the primary one first; with none, the Wi-Fi or
+/// cable ones, never a bridge or loopback NetworkManager keeps for itself.
+async fn active_connections(conn: &zbus::Connection, nm: &NetworkManagerProxy<'_>) -> Vec<ActiveInfo> {
+    let read = |path: OwnedObjectPath| async move {
+        let active = ActiveConnectionProxy::builder(conn)
+            .path(path.clone())?
+            .cache_properties(zbus::proxy::CacheProperties::No)
+            .build()
+            .await?;
+        zbus::Result::Ok((
+            active.state().await.unwrap_or(0),
+            ActiveInfo {
+                settings: active.connection().await?,
+                name: active.id().await?,
+                kind: active.kind().await?,
+                path,
+            },
+        ))
+    };
+    let mut found = Vec::new();
+    let primary = nm.primary_connection().await.ok().filter(|p| p.as_str() != "/");
+    if let Some(primary) = primary.clone() {
+        if let Ok((_, info)) = read(primary).await {
+            found.push(info);
+        }
+    }
+    for path in nm.active_connections().await.unwrap_or_default() {
+        if Some(&path) == primary.as_ref() {
+            continue;
+        }
+        // 2: activated.
+        if let Ok((2, info)) = read(path).await {
+            if info.physical() {
+                found.push(info);
+            }
+        }
+    }
+    found
 }
 
 async fn vpns(conn: &zbus::Connection, nm: &NetworkManagerProxy<'_>) -> zbus::Result<Vec<Vpn>> {
@@ -660,8 +743,6 @@ trait Device {
     #[zbus(property)]
     fn state(&self) -> zbus::Result<u32>;
     #[zbus(property)]
-    fn icon_name(&self) -> zbus::Result<String>;
-    #[zbus(property)]
     fn time_to_empty(&self) -> zbus::Result<i64>;
     #[zbus(property)]
     fn time_to_full(&self) -> zbus::Result<i64>;
@@ -736,6 +817,18 @@ async fn peripherals(conn: &zbus::Connection) -> zbus::Result<Vec<Peripheral>> {
     Ok(peripherals)
 }
 
+/// Adwaita's battery icon for a level, in tens, and UPower's state: 1
+/// charging, 4 fully charged, 5 plugged in but waiting to charge.
+fn battery_level_icon(percentage: f64, state: u32) -> String {
+    let level = ((percentage.clamp(0.0, 100.0) / 10.0).round() as u32 * 10).min(100);
+    match state {
+        4 if level == 100 => "battery-level-100-charged-symbolic".to_owned(),
+        1 => format!("battery-level-{level}-charging-symbolic"),
+        4 | 5 => format!("battery-level-{level}-plugged-in-symbolic"),
+        _ => format!("battery-level-{level}-symbolic"),
+    }
+}
+
 async fn battery(conn: &zbus::Connection) -> zbus::Result<Option<Battery>> {
     let device = DeviceProxy::builder(conn)
         .cache_properties(zbus::proxy::CacheProperties::No)
@@ -752,10 +845,14 @@ async fn battery(conn: &zbus::Connection) -> zbus::Result<Option<Battery>> {
         _ => None,
     }
     .filter(|t| *t > 0);
+    let percentage = device.percentage().await?;
     Ok(Some(Battery {
-        percentage: device.percentage().await?,
+        percentage,
         charging: matches!(state, 1 | 4),
-        icon: device.icon_name().await?,
+        // UPower's own name says only full, good, low, caution or empty, and
+        // many themes draw "good" as a full battery: at 40% the panel showed
+        // it full. Drawn from the level instead, as the battery applet does.
+        icon: battery_level_icon(percentage, state),
         time_left,
     }))
 }

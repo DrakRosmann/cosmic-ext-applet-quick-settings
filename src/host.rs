@@ -13,6 +13,39 @@ pub fn in_flatpak() -> bool {
     *FLATPAK
 }
 
+/// What a graphical program needs to find the desktop. `flatpak-spawn
+/// --host` hands the host program none of the sandbox's environment: without
+/// these, COSMIC Settings started from the applet finds no Wayland display
+/// and, where there's no X server either, doesn't open at all.
+const DESKTOP_ENV: [&str; 6] = [
+    "WAYLAND_DISPLAY",
+    "DISPLAY",
+    "XDG_CURRENT_DESKTOP",
+    "XDG_SESSION_TYPE",
+    "XDG_SESSION_DESKTOP",
+    "XDG_ACTIVATION_TOKEN",
+];
+
+/// The desktop's variables as `--env=` arguments for `flatpak-spawn`.
+fn desktop_env() -> Vec<String> {
+    DESKTOP_ENV
+        .iter()
+        .filter_map(|key| {
+            let value = std::env::var(key).ok().filter(|v| !v.is_empty())?;
+            // A socket inside the sandbox means nothing on the host.
+            if *key == "WAYLAND_DISPLAY" && value.starts_with('/') {
+                return None;
+            }
+            Some(format!("--env={key}={value}"))
+        })
+        .collect()
+}
+
+/// The panel hands the applet its Wayland connection as an open file:
+/// a program started from it would take that number for its own connection,
+/// and fail to reach the compositor.
+const PANEL_ONLY_ENV: [&str; 2] = ["WAYLAND_SOCKET", "X_PRIVILEGED_WAYLAND_SOCKET"];
+
 /// A host program, with these environment variables. In a sandbox the
 /// program ends with the applet, as it would outside.
 pub fn command(program: &str, env: &[(&str, &str)]) -> tokio::process::Command {
@@ -26,6 +59,9 @@ pub fn command(program: &str, env: &[(&str, &str)]) -> tokio::process::Command {
         command
     } else {
         let mut command = tokio::process::Command::new(program);
+        for key in PANEL_ONLY_ENV {
+            command.env_remove(key);
+        }
         command.envs(env.iter().copied());
         command
     }
@@ -36,11 +72,16 @@ pub fn spawn(program: &str, args: &[&str]) {
     let result = if in_flatpak() {
         std::process::Command::new("flatpak-spawn")
             .arg("--host")
+            .args(desktop_env())
             .arg(program)
             .args(args)
             .spawn()
     } else {
-        std::process::Command::new(program).args(args).spawn()
+        let mut command = std::process::Command::new(program);
+        for key in PANEL_ONLY_ENV {
+            command.env_remove(key);
+        }
+        command.args(args).spawn()
     };
     match result {
         // Reaped by a thread, not left a zombie.

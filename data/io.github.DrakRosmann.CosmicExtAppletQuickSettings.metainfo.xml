@@ -15,7 +15,7 @@
   <description>
     <p>A control center for the COSMIC™ panel, like the ones on Android, macOS and GNOME.</p>
     <ul>
-      <li>Tiles for Wi-Fi, VPN, Bluetooth, power mode, do not disturb (for an hour, until tomorrow…), dark style, airplane mode, tiling, accessibility and more, which you can add, remove, resize and drag around</li>
+      <li>Tiles for Wi-Fi, VPN, DNS, Bluetooth, power mode, do not disturb (for an hour, until tomorrow…), dark style, airplane mode, tiling, accessibility and more, which you can add, remove, resize and drag around</li>
       <li>Volume and brightness sliders, the volume of each app, and the sound output and microphone to use</li>
       <li>What's playing, with its cover and controls, from any media player</li>
       <li>Notifications, grouped by app, with their buttons</li>
@@ -35,6 +35,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.1" date="2026-11-03">
+      <description>
+        <ul>
+          <li>A DNS tile, to switch between the network's servers and Cloudflare, Google, Quad9 or AdGuard</li>
+          <li>Choose which icons the panel shows, and how big they are</li>
+          <li>Settings opens from the Flatpak on systems without an X server</li>
+          <li>The battery icon follows the charge</li>
+          <li>Wi-Fi no longer shows as off while connected</li>
+          <li>The power button stays inside the popup with any interface density, and the notifications get room</li>
+          <li>Sliders and round buttons follow the theme's roundness</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-08"/>
   </releases>
   <provides>

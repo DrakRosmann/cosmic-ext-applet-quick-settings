@@ -3,12 +3,14 @@
 mod app;
 mod audio;
 mod bar_spacing;
+mod dns;
 mod host;
 mod i18n;
 mod latest;
 mod media;
 mod notifications;
 mod pages;
+mod panel_icons;
 mod services;
 mod tiles;
 mod transition;

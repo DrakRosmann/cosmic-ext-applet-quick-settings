@@ -624,11 +624,13 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Level<
         let hovered = cursor.is_over(bounds) || state.dragging;
         let track: Color = if hovered { component.hover } else { component.base }.into();
         let radius = bounds.height / 2.0;
+        // Round ends, or as square as the theme's corners.
+        let corner = cosmic.radius_xl()[0].min(radius);
         renderer.fill_quad(
             renderer::Quad {
                 bounds,
                 border: Border {
-                    radius: radius.into(),
+                    radius: corner.into(),
                     ..Border::default()
                 },
                 ..renderer::Quad::default()
@@ -646,7 +648,7 @@ impl<Message: Clone> Widget<Message, cosmic::Theme, cosmic::Renderer> for Level<
             renderer::Quad {
                 bounds: Rectangle::new(bounds.position(), Size::new(width, bounds.height)),
                 border: Border {
-                    radius: radius.into(),
+                    radius: corner.into(),
                     ..Border::default()
                 },
                 ..renderer::Quad::default()
