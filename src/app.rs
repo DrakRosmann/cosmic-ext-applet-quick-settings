@@ -92,6 +92,7 @@ pub type NotificationKey = (u32, bool);
 #[derive(Clone, Debug)]
 pub enum Message {
     TogglePopup,
+    Escape,
     /// Opens the popup on a page by itself, for screenshots.
     Preview(Page),
     Closed(window::Id),
@@ -619,6 +620,15 @@ impl cosmic::Application for App {
                 self.page = Some(page);
                 self.selected_tile = None;
                 return self.load(page);
+            }
+            Message::Escape => {
+                if self.popup.is_none() {
+                    return Task::none();
+                }
+                if self.page.is_some_and(|p| p != Page::Main) {
+                    return self.update(Message::ShowPage(Page::Main));
+                }
+                return self.close_popup();
             }
             Message::Update(update) => match update {
                 Update::Network(network) => {
@@ -1380,6 +1390,15 @@ impl cosmic::Application for App {
                 _ => None,
             }
         }));
+
+        subscriptions.push(event::listen_with(|event, _, _| match event {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                ..
+            }) => Some(Message::Escape),
+            _ => None,
+        }));
+
         subscriptions.push(window::resize_events().map(|(id, size)| Message::Resized(id, size)));
         if self.drag.is_some() {
             // Let go anywhere, on a tile or not.
